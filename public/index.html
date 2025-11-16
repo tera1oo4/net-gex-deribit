@@ -1,98 +1,76 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Real-time Gamma Exposure Calculator for Deribit BTC Options">
-    <meta name="keywords" content="deribit, options, gamma, trading, btc, crypto">
-    <title>Deribit Gamma Calculator</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <title>Gamma by Expiration - Deribit BTC Options</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
-        :root {
-            --primary: #667eea;
-            --secondary: #764ba2;
-            --success: #06A77D;
-            --danger: #D62828;
-            --warning: #F77F00;
-            --info: #2E86AB;
-            --light: #f8f9fa;
-            --dark: #333;
-        }
-
+        
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             padding: 20px;
             min-height: 100vh;
         }
-
+        
         .container {
             max-width: 1600px;
             margin: 0 auto;
             background: white;
             padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
         }
-
+        
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
             flex-wrap: wrap;
             gap: 20px;
         }
-
+        
         h1 {
-            color: var(--dark);
-            font-size: 32px;
-            font-weight: 700;
+            color: #333;
+            text-align: center;
+            font-size: 28px;
+            flex: 1;
         }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .btn {
+        
+        .refresh-btn {
             padding: 12px 24px;
-            background: var(--primary);
+            background: #667eea;
             color: white;
             border: none;
             border-radius: 8px;
-            font-weight: 600;
-            font-size: 14px;
+            font-weight: bold;
             cursor: pointer;
+            font-size: 14px;
             transition: all 0.3s ease;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-
-        .btn:hover:not(:disabled) {
-            background: var(--secondary);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        
+        .refresh-btn:hover:not(:disabled) {
+            background: #764ba2;
+            transform: scale(1.05);
         }
-
-        .btn:disabled {
+        
+        .refresh-btn:disabled {
             background: #ccc;
             cursor: not-allowed;
+            transform: scale(1);
             opacity: 0.6;
         }
-
-        .btn.loading {
-            opacity: 0.8;
-        }
-
+        
         .spinner {
             display: inline-block;
             width: 16px;
@@ -102,329 +80,297 @@
             border-top-color: transparent;
             animation: spin 0.6s linear infinite;
         }
-
+        
         @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
+            to { transform: rotate(360deg); }
         }
-
+        
         .timestamp {
             text-align: center;
             color: #666;
             font-size: 12px;
-            margin-bottom: 20px;
-        }
-
-        .price-info {
-            text-align: center;
-            font-size: 18px;
-            color: white;
-            font-weight: bold;
-            margin-bottom: 20px;
-            padding: 20px;
-            background: linear-gradient(135deg, var(--info) 0%, var(--primary) 100%);
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(46, 134, 171, 0.3);
-        }
-
-        .price-info .label {
-            font-size: 12px;
-            opacity: 0.9;
-        }
-
-        .price-info .value {
-            font-size: 32px;
-            margin-top: 5px;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
             margin-bottom: 30px;
         }
-
+        
+        .price-info {
+            text-align: center;
+            font-size: 16px;
+            color: #2E86AB;
+            font-weight: bold;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f0f7ff;
+            border-radius: 8px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
         .stat-box {
             text-align: center;
-            padding: 20px;
+            padding: 15px;
             background: white;
-            border-left: 4px solid var(--primary);
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border-left: 4px solid #2E86AB;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-
-        .stat-box:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-        }
-
+        
         .stat-box.call {
-            border-left-color: var(--success);
+            border-left-color: #06A77D;
         }
-
+        
         .stat-box.put {
-            border-left-color: var(--danger);
+            border-left-color: #D62828;
         }
-
+        
         .stat-label {
             font-size: 11px;
             color: #999;
             text-transform: uppercase;
-            letter-spacing: 1px;
             margin-bottom: 8px;
-            font-weight: 600;
+            letter-spacing: 0.5px;
         }
-
+        
         .stat-value {
-            font-size: 24px;
+            font-size: 18px;
             font-weight: bold;
-            color: var(--primary);
+            color: #2E86AB;
             margin-bottom: 5px;
         }
-
-        .stat-box.call .stat-value {
-            color: var(--success);
-        }
-
-        .stat-box.put .stat-value {
-            color: var(--danger);
-        }
-
+        
         .stat-value.usd {
             font-size: 14px;
             color: #666;
-            margin-top: 10px;
         }
-
-        .content-section {
+        
+        .stat-box.call .stat-value {
+            color: #06A77D;
+        }
+        
+        .stat-box.put .stat-value {
+            color: #D62828;
+        }
+        
+        h2 {
+            color: #555;
+            text-align: left;
             margin-top: 40px;
-        }
-
-        .section-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--dark);
             margin-bottom: 20px;
+            font-size: 20px;
+            border-bottom: 2px solid #667eea;
             padding-bottom: 10px;
-            border-bottom: 2px solid var(--primary);
         }
-
+        
+        .filter-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .filter-title {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        
+        .filter-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .filter-options label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #555;
+        }
+        
+        .filter-options input[type="checkbox"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+        }
+        
+        .filter-options label:hover {
+            color: #333;
+        }
+        
         .charts-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
-            margin-top: 20px;
+            margin-top: 30px;
         }
-
+        
         .chart-wrapper {
             border: 1px solid #ddd;
             border-radius: 8px;
             padding: 20px;
             background: #fafafa;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-
+        
         .chart-title {
             font-size: 14px;
-            font-weight: 600;
+            font-weight: bold;
             margin-bottom: 15px;
-            color: var(--dark);
-            border-bottom: 2px solid #eee;
+            color: #333;
             padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
         }
-
+        
         canvas {
             max-height: 350px;
         }
-
+        
         .loading {
             text-align: center;
-            padding: 60px 20px;
+            padding: 40px;
             color: #666;
         }
-
-        .loading .spinner {
-            width: 40px;
-            height: 40px;
-            border-width: 3px;
-            border-color: var(--primary);
-            margin-bottom: 20px;
-        }
-
-        .loading p {
-            font-size: 16px;
-            margin-top: 20px;
-        }
-
+        
         .error {
             background: #fee;
-            color: #c33;
+            color: #c00;
             padding: 15px;
             border-radius: 8px;
             margin: 20px 0;
-            border-left: 4px solid #c00;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
-
-        .error-icon {
-            font-size: 20px;
-        }
-
+        
         .footer {
-            margin-top: 40px;
+            margin-top: 30px;
             padding-top: 20px;
             border-top: 1px solid #eee;
             text-align: center;
             color: #999;
             font-size: 12px;
         }
-
-        .footer a {
-            color: var(--primary);
-            text-decoration: none;
-        }
-
-        .footer a:hover {
-            text-decoration: underline;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            background: #e8f5e9;
-            color: var(--success);
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-top: 10px;
-        }
-
-        .status-badge.error {
-            background: #ffebee;
-            color: var(--danger);
-        }
-
+        
         @media (max-width: 1024px) {
             .charts-grid {
                 grid-template-columns: 1fr;
             }
-
+            
             .header {
                 flex-direction: column;
-                align-items: flex-start;
+                align-items: center;
             }
         }
-
+        
         @media (max-width: 600px) {
             .container {
-                padding: 20px;
+                padding: 15px;
             }
-
+            
             h1 {
-                font-size: 24px;
+                font-size: 20px;
             }
-
-            .price-info .value {
-                font-size: 24px;
-            }
-
+            
             .stats {
                 grid-template-columns: 1fr;
             }
-
-            .stat-value {
-                font-size: 20px;
-            }
-
-            .button-group {
-                width: 100%;
+            
+            .filter-options {
                 flex-direction: column;
-            }
-
-            .btn {
-                width: 100%;
-                justify-content: center;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <div class="header">
             <h1>🎯 Gamma Exposure Analysis</h1>
-            <div class="button-group">
-                <button class="btn" id="refreshBtn" onclick="refreshData()">
-                    <span id="refreshIcon">🔄</span>
-                    <span id="refreshText">Refresh Data</span>
-                </button>
-                <button class="btn" id="settingsBtn" style="background: var(--warning);" onclick="toggleSettings()">
-                    ⚙️ Settings
-                </button>
-            </div>
+            <button class="refresh-btn" id="refreshBtn" onclick="refreshData()">
+                <span id="refreshIcon">🔄</span>
+                <span id="refreshText">Refresh</span>
+            </button>
         </div>
-
-        <!-- Timestamp -->
+        
         <p class="timestamp" id="timestamp">Loading...</p>
-
-        <!-- Price Info -->
-        <div class="price-info">
-            <div class="label">📊 Current BTC Price</div>
-            <div class="value" id="priceValue">-</div>
-        </div>
-
-        <!-- Main Content -->
+        <div class="price-info" id="priceInfo">Loading...</div>
+        
         <div id="content" style="display: none;">
-            <!-- Stats -->
             <div class="stats" id="stats"></div>
-
-            <!-- Charts Section -->
-            <div class="content-section">
-                <h2 class="section-title">📈 Gamma by Expiration</h2>
-                <div class="charts-grid">
-                    <div class="chart-wrapper">
-                        <div class="chart-title">Total Gamma</div>
-                        <canvas id="totalGammaChart"></canvas>
-                    </div>
-                    <div class="chart-wrapper">
-                        <div class="chart-title">Total Gamma USD (per 100bps)</div>
-                        <canvas id="totalGammaUSDChart"></canvas>
-                    </div>
+            
+            <h2>📊 Summary by Expiration</h2>
+            <div class="charts-grid">
+                <div class="chart-wrapper">
+                    <div class="chart-title">Total Gamma by Expiration</div>
+                    <canvas id="totalGammaChart"></canvas>
+                </div>
+                
+                <div class="chart-wrapper">
+                    <div class="chart-title">Total Gamma in USD (per 100bps move)</div>
+                    <canvas id="totalGammaUSDChart"></canvas>
+                </div>
+                
+                <div class="chart-wrapper">
+                    <div class="chart-title">Call vs Put Gamma</div>
+                    <canvas id="callPutGammaChart"></canvas>
+                </div>
+                
+                <div class="chart-wrapper">
+                    <div class="chart-title">Call vs Put Gamma USD</div>
+                    <canvas id="callPutGammaUSDChart"></canvas>
+                </div>
+                
+                <div class="chart-wrapper">
+                    <div class="chart-title">Stacked Gamma Breakdown</div>
+                    <canvas id="stackedGammaChart"></canvas>
+                </div>
+                
+                <div class="chart-wrapper">
+                    <div class="chart-title">Gamma Distribution (Pie)</div>
+                    <canvas id="pieGammaChart"></canvas>
                 </div>
             </div>
+            
+            <h2>📈 Gamma by Strike (Filtered)</h2>
+            <div class="filter-section">
+                <div class="filter-title">🔍 Select Expiration Dates:</div>
+                <div class="filter-options" id="filterOptions"></div>
+            </div>
+            
+            <div class="charts-grid">
+                <div class="chart-wrapper" style="grid-column: 1 / -1;">
+                    <div class="chart-title">Combined Gamma USD by Strike (Selected Dates)</div>
+                    <canvas id="combinedStrikeChartUSD"></canvas>
+                </div>
+            </div>
+            
+            <h2>📊 Gamma by Strike (All Dates)</h2>
+            <div class="charts-grid" id="strikeCharts"></div>
         </div>
-
-        <!-- Loading State -->
+        
         <div id="loading" class="loading">
             <div class="spinner"></div>
             <p>Loading gamma data...</p>
         </div>
-
-        <!-- Error State -->
         <div id="error"></div>
-
-        <!-- Footer -->
+        
         <div class="footer">
-            <p>🚀 Deribit Gamma Calculator | Real-time Options Analysis</p>
-            <p style="margin-top: 10px; font-size: 11px;">Last Update: <span id="lastUpdate">Never</span></p>
+            Generated by Deribit Gamma Calculator • Real-time data • Gamma USD = Gamma × BTC² × OI × 100
         </div>
     </div>
 
     <script>
-        let chartGamma = null;
-        let chartGammaUSD = null;
-        let lastUpdateTime = null;
-
-        // Initialize
-        window.addEventListener('load', () => {
-            refreshData();
-            // Auto-refresh every 5 minutes
-            setInterval(refreshData, 5 * 60 * 1000);
-        });
+        let chartInstances = {};
+        let gammaByExpiration = null;
 
         async function refreshData() {
             const btn = document.getElementById('refreshBtn');
@@ -435,7 +381,6 @@
             const content = document.getElementById('content');
 
             btn.disabled = true;
-            btn.classList.add('loading');
             icon.innerHTML = '<span class="spinner"></span>';
             text.textContent = 'Loading...';
             loading.style.display = 'block';
@@ -443,38 +388,26 @@
 
             try {
                 const response = await fetch('/api/gamma');
-                if (!response.ok) {
-                    throw new Error(`HTTP Error: ${response.status}`);
-                }
-
+                if (!response.ok) throw new Error('Failed to fetch');
+                
                 const data = await response.json();
-                const { gammaByExpiration, indexPrice } = data;
+                gammaByExpiration = data.gammaByExpiration;
+                const indexPrice = data.indexPrice;
 
                 renderData(gammaByExpiration, indexPrice);
-
+                
                 loading.style.display = 'none';
                 content.style.display = 'block';
-
-                lastUpdateTime = new Date();
-                document.getElementById('lastUpdate').textContent = lastUpdateTime.toLocaleTimeString();
-                document.getElementById('timestamp').textContent =
-                    `Deribit BTC Options • ${lastUpdateTime.toLocaleString()}`;
+                document.getElementById('timestamp').textContent = 
+                    `Deribit BTC Options • ${new Date().toLocaleString()}`;
 
             } catch (error) {
-                const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-                errorDiv.innerHTML = `
-                    <div class="error">
-                        <span class="error-icon">⚠️</span>
-                        <span>Error: ${errorMsg}</span>
-                    </div>
-                `;
+                errorDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
                 loading.style.display = 'none';
-                console.error('Error fetching data:', error);
             } finally {
                 btn.disabled = false;
-                btn.classList.remove('loading');
                 icon.textContent = '🔄';
-                text.textContent = 'Refresh Data';
+                text.textContent = 'Refresh';
             }
         }
 
@@ -484,118 +417,297 @@
             const callGammas = dates.map(d => gammaByExpiration[d].call_gamma);
             const putGammas = dates.map(d => gammaByExpiration[d].put_gamma);
             const totalGammasUSD = dates.map(d => gammaByExpiration[d].total_gamma_usd);
+            const callGammasUSD = dates.map(d => gammaByExpiration[d].call_gamma_usd);
+            const putGammasUSD = dates.map(d => gammaByExpiration[d].put_gamma_usd);
 
-            const totalGammaSum = totalGammas.reduce((a, b) => a + b, 0);
-            const totalGammaUSDSum = totalGammasUSD.reduce((a, b) => a + b, 0);
-            const callGammaSum = callGammas.reduce((a, b) => a + b, 0);
-            const putGammaSum = putGammas.reduce((a, b) => a + b, 0);
-
-            // Update Price
-            document.getElementById('priceValue').textContent = `$${indexPrice.toLocaleString('en-US', {maximumFractionDigits: 2})}`;
-
-            // Update Stats
-            const statsHtml = `
+            // Stats
+            document.getElementById('stats').innerHTML = `
                 <div class="stat-box">
                     <div class="stat-label">📊 Total Gamma</div>
-                    <div class="stat-value">${totalGammaSum.toFixed(6)}</div>
-                    <div class="stat-value usd">≈ $${(totalGammaUSDSum / 1e6).toFixed(2)}M</div>
+                    <div class="stat-value">${totalGammas.reduce((a, b) => a + b, 0).toFixed(6)}</div>
+                    <div class="stat-value usd">≈ $${(totalGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}M/100bps</div>
                 </div>
                 <div class="stat-box call">
                     <div class="stat-label">📈 Call Gamma</div>
-                    <div class="stat-value">${callGammaSum.toFixed(6)}</div>
-                    <div class="stat-value usd">≈ $${((callGammas.reduce((a, b, i) => a + totalGammasUSD[i] * (callGammas[i] / (callGammas[i] + putGammas[i] || 1)), 0)) / 1e6).toFixed(2)}M</div>
+                    <div class="stat-value">${callGammas.reduce((a, b) => a + b, 0).toFixed(6)}</div>
+                    <div class="stat-value usd">≈ $${(callGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}M/100bps</div>
                 </div>
                 <div class="stat-box put">
                     <div class="stat-label">📉 Put Gamma</div>
-                    <div class="stat-value">${putGammaSum.toFixed(6)}</div>
-                    <div class="stat-value usd">≈ $${((putGammas.reduce((a, b, i) => a + totalGammasUSD[i] * (putGammas[i] / (callGammas[i] + putGammas[i] || 1)), 0)) / 1e6).toFixed(2)}M</div>
+                    <div class="stat-value">${putGammas.reduce((a, b) => a + b, 0).toFixed(6)}</div>
+                    <div class="stat-value usd">≈ $${(putGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}M/100bps</div>
                 </div>
                 <div class="stat-box">
                     <div class="stat-label">📅 Expiration Dates</div>
                     <div class="stat-value">${dates.length}</div>
-                    <div class="status-badge">Active</div>
                 </div>
             `;
-            document.getElementById('stats').innerHTML = statsHtml;
 
-            // Update Charts
-            updateCharts(dates, totalGammas, totalGammasUSD, callGammas, putGammas);
+            document.getElementById('priceInfo').textContent = `💰 BTC Price: $${indexPrice.toFixed(2)}`;
+
+            // Charts
+            createChart('totalGammaChart', 'bar', dates, [{
+                label: 'Total Gamma',
+                data: totalGammas,
+                backgroundColor: 'rgba(46, 134, 171, 0.8)',
+                borderColor: '#1a4d7a',
+                borderWidth: 2,
+                borderRadius: 4
+            }]);
+
+            createChart('totalGammaUSDChart', 'bar', dates, [{
+                label: 'Total Gamma USD',
+                data: totalGammasUSD,
+                backgroundColor: 'rgba(76, 175, 80, 0.8)',
+                borderColor: '#558b2f',
+                borderWidth: 2,
+                borderRadius: 4
+            }]);
+
+            createChart('callPutGammaChart', 'bar', dates, [
+                {
+                    label: 'Call Gamma',
+                    data: callGammas,
+                    backgroundColor: 'rgba(6, 167, 125, 0.8)',
+                    borderColor: '#048a5f',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Put Gamma',
+                    data: putGammas,
+                    backgroundColor: 'rgba(214, 40, 40, 0.8)',
+                    borderColor: '#b81d1d',
+                    borderWidth: 2,
+                    borderRadius: 4
+                }
+            ]);
+
+            createChart('callPutGammaUSDChart', 'bar', dates, [
+                {
+                    label: 'Call Gamma USD',
+                    data: callGammasUSD,
+                    backgroundColor: 'rgba(76, 175, 80, 0.8)',
+                    borderColor: '#558b2f',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Put Gamma USD',
+                    data: putGammasUSD,
+                    backgroundColor: 'rgba(255, 87, 34, 0.8)',
+                    borderColor: '#e64a19',
+                    borderWidth: 2,
+                    borderRadius: 4
+                }
+            ]);
+
+            createChart('stackedGammaChart', 'bar', dates, [
+                {
+                    label: 'Call Gamma',
+                    data: callGammas,
+                    backgroundColor: 'rgba(6, 167, 125, 0.8)',
+                    borderColor: '#048a5f',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Put Gamma',
+                    data: putGammas,
+                    backgroundColor: 'rgba(214, 40, 40, 0.8)',
+                    borderColor: '#b81d1d',
+                    borderWidth: 2,
+                    borderRadius: 4
+                }
+            ], true);
+
+            const colorPalette = [
+                'rgba(46, 134, 171, 0.8)',
+                'rgba(6, 167, 125, 0.8)',
+                'rgba(214, 40, 40, 0.8)',
+                'rgba(247, 127, 0, 0.8)',
+                'rgba(108, 117, 125, 0.8)',
+                'rgba(255, 193, 7, 0.8)',
+                'rgba(52, 211, 153, 0.8)',
+                'rgba(239, 68, 68, 0.8)',
+                'rgba(59, 130, 246, 0.8)',
+                'rgba(168, 85, 247, 0.8)'
+            ];
+
+            createChart('pieGammaChart', 'doughnut', dates, [{
+                data: totalGammas,
+                backgroundColor: colorPalette.slice(0, dates.length),
+                borderColor: '#fff',
+                borderWidth: 2
+            }]);
+
+            // Filters
+            document.getElementById('filterOptions').innerHTML = dates.map((d, i) =>
+                `<label><input type="checkbox" class="date-filter" value="${d}" ${i < 3 ? 'checked' : ''} onchange="updateCombinedChart()"> ${d}</label>`
+            ).join('');
+
+            updateCombinedChart();
+
+            // Strike charts
+            renderStrikeCharts(dates, gammaByExpiration);
         }
 
-        function updateCharts(dates, totalGammas, totalGammasUSD, callGammas, putGammas) {
-            // Total Gamma Chart
-            const ctxGamma = document.getElementById('totalGammaChart').getContext('2d');
-            if (chartGamma) chartGamma.destroy();
-            chartGamma = new Chart(ctxGamma, {
-                type: 'bar',
-                data: {
-                    labels: dates,
-                    datasets: [
-                        {
-                            label: 'Call Gamma',
-                            data: callGammas,
-                            backgroundColor: 'rgba(6, 167, 125, 0.7)',
-                            borderColor: '#048a5f',
-                            borderWidth: 1,
-                            borderRadius: 4
-                        },
-                        {
-                            label: 'Put Gamma',
-                            data: putGammas,
-                            backgroundColor: 'rgba(214, 40, 40, 0.7)',
-                            borderColor: '#b81d1d',
-                            borderWidth: 1,
-                            borderRadius: 4
-                        }
-                    ]
-                },
+        function createChart(id, type, labels, datasets, stacked = false) {
+            if (chartInstances[id]) chartInstances[id].destroy();
+            
+            const ctx = document.getElementById(id).getContext('2d');
+            chartInstances[id] = new Chart(ctx, {
+                type: type,
+                data: { labels, datasets },
                 options: {
                     responsive: true,
-                    plugins: {
-                        legend: { display: true, position: 'top' }
-                    },
-                    scales: { y: { beginAtZero: true } }
+                    plugins: { legend: { display: true, position: 'top' } },
+                    scales: stacked ? {
+                        x: { stacked: true },
+                        y: { stacked: true }
+                    } : { y: { beginAtZero: true } }
                 }
             });
+        }
 
-            // Total Gamma USD Chart
-            const ctxGammaUSD = document.getElementById('totalGammaUSDChart').getContext('2d');
-            if (chartGammaUSD) chartGammaUSD.destroy();
-            chartGammaUSD = new Chart(ctxGammaUSD, {
-                type: 'bar',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Total Gamma USD',
-                        data: totalGammasUSD,
-                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                        borderColor: '#667eea',
-                        borderWidth: 2,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: true, position: 'top' }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return '$' + (value / 1e6).toFixed(0) + 'M';
-                                }
-                            }
-                        }
+        function updateCombinedChart() {
+            const selectedDates = Array.from(document.querySelectorAll('.date-filter:checked')).map(el => el.value);
+            const combinedStrikes = {};
+
+            selectedDates.forEach(date => {
+                gammaByExpiration[date].instruments?.forEach(inst => {
+                    if (!combinedStrikes[inst.strike]) {
+                        combinedStrikes[inst.strike] = { call_gamma_usd: 0, put_gamma_usd: 0 };
                     }
-                }
+                    if (inst.option_type === 'call') {
+                        combinedStrikes[inst.strike].call_gamma_usd += inst.gamma_exposure_usd;
+                    } else {
+                        combinedStrikes[inst.strike].put_gamma_usd += inst.gamma_exposure_usd;
+                    }
+                });
             });
+
+            const sortedStrikes = Object.keys(combinedStrikes).map(Number).sort((a, b) => a - b);
+            const callGammasUSD = sortedStrikes.map(s => combinedStrikes[s].call_gamma_usd);
+            const putGammasUSD = sortedStrikes.map(s => combinedStrikes[s].put_gamma_usd);
+
+            createChart('combinedStrikeChartUSD', 'bar', sortedStrikes, [
+                {
+                    label: 'Call Gamma USD',
+                    data: callGammasUSD,
+                    backgroundColor: 'rgba(76, 175, 80, 0.8)',
+                    borderColor: '#558b2f',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Put Gamma USD',
+                    data: putGammasUSD,
+                    backgroundColor: 'rgba(255, 87, 34, 0.8)',
+                    borderColor: '#e64a19',
+                    borderWidth: 2,
+                    borderRadius: 4
+                }
+            ]);
         }
 
-        function toggleSettings() {
-            alert('Settings panel coming soon! 🔧');
+     function renderStrikeCharts(dates, gammaByExpiration) {
+    let html = '';
+    dates.forEach(expirationDate => {
+        const expData = gammaByExpiration[expirationDate];
+        
+        if (!expData || !expData.instruments || expData.instruments.length === 0) {
+            console.warn(`No instruments for ${expirationDate}`);
+            return;
         }
+
+        const strikes = {};
+
+        expData.instruments.forEach(inst => {
+            if (!strikes[inst.strike]) {
+                strikes[inst.strike] = {
+                    call_gamma: 0,
+                    put_gamma: 0,
+                    call_gamma_usd: 0,
+                    put_gamma_usd: 0
+                };
+            }
+
+            if (inst.option_type === 'call') {
+                strikes[inst.strike].call_gamma += inst.gamma_exposure;
+                strikes[inst.strike].call_gamma_usd += inst.gamma_exposure_usd;
+            } else {
+                strikes[inst.strike].put_gamma += inst.gamma_exposure;
+                strikes[inst.strike].put_gamma_usd += inst.gamma_exposure_usd;
+            }
+        });
+
+        const sortedStrikes = Object.keys(strikes).map(Number).sort((a, b) => a - b);
+        const chartId1 = `strikeChart${expirationDate.replace(/-/g, '')}`;
+        const chartId2 = `strikeChartUSD${expirationDate.replace(/-/g, '')}`;
+
+        html += `
+            <div class="chart-wrapper">
+                <div class="chart-title">Gamma by Strike - ${expirationDate}</div>
+                <canvas id="${chartId1}"></canvas>
+            </div>
+            <div class="chart-wrapper">
+                <div class="chart-title">Gamma USD by Strike - ${expirationDate}</div>
+                <canvas id="${chartId2}"></canvas>
+            </div>
+        `;
+
+        setTimeout(() => {
+            const callData = sortedStrikes.map(s => strikes[s].call_gamma);
+            const putData = sortedStrikes.map(s => strikes[s].put_gamma);
+            const callDataUSD = sortedStrikes.map(s => strikes[s].call_gamma_usd);
+            const putDataUSD = sortedStrikes.map(s => strikes[s].put_gamma_usd);
+
+            createChart(chartId1, 'bar', sortedStrikes, [
+                {
+                    label: 'Call Gamma',
+                    data: callData,
+                    backgroundColor: 'rgba(6, 167, 125, 0.8)',
+                    borderColor: '#048a5f',
+                    borderWidth: 1,
+                    borderRadius: 2
+                },
+                {
+                    label: 'Put Gamma',
+                    data: putData,
+                    backgroundColor: 'rgba(214, 40, 40, 0.8)',
+                    borderColor: '#b81d1d',
+                    borderWidth: 1,
+                    borderRadius: 2
+                }
+            ]);
+
+            createChart(chartId2, 'bar', sortedStrikes, [
+                {
+                    label: 'Call Gamma USD',
+                    data: callDataUSD,
+                    backgroundColor: 'rgba(76, 175, 80, 0.8)',
+                    borderColor: '#558b2f',
+                    borderWidth: 1,
+                    borderRadius: 2
+                },
+                {
+                    label: 'Put Gamma USD',
+                    data: putDataUSD,
+                    backgroundColor: 'rgba(255, 87, 34, 0.8)',
+                    borderColor: '#e64a19',
+                    borderWidth: 1,
+                    borderRadius: 2
+                }
+            ]);
+        }, 100);
+    });
+
+    document.getElementById('strikeCharts').innerHTML = html;
+}
+
+        // Load on init
+        window.addEventListener('load', refreshData);
     </script>
 </body>
 </html>

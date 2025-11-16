@@ -2,6 +2,28 @@ import { Injectable } from '@nestjs/common';
 import * as WebSocket from 'ws';
 import { GammaData, MarketData, GammaResponse } from '../types/gamma.types';
 
+interface Instrument {
+  instrument_name: string;
+  strike: number;
+  option_type: string;
+  gamma: number;
+  open_interest: number;
+  gamma_exposure: number;
+  gamma_exposure_usd: number;
+  mark_iv: number;
+  mark_price: number;
+}
+
+interface GammaExpirationData {
+  total_gamma: number;
+  total_gamma_usd: number;
+  call_gamma: number;
+  call_gamma_usd: number;
+  put_gamma: number;
+  put_gamma_usd: number;
+  instruments: Instrument[];
+}
+
 const CONFIG = {
   WS_URL: 'wss://test.deribit.com/ws/api/v2',
   CLIENT_ID: process.env.CLIENT_ID || 'YWTIYiSA',
@@ -113,7 +135,7 @@ export class GammaService {
             marketDataMap[item.instrument_name] = item;
           });
 
-          const gammaByExpiration: GammaData = {};
+          const gammaByExpiration: { [key: string]: GammaExpirationData } = {};
           const now = Date.now();
           const r = 0;
 
@@ -144,7 +166,8 @@ export class GammaService {
                 call_gamma: 0,
                 call_gamma_usd: 0,
                 put_gamma: 0,
-                put_gamma_usd: 0
+                put_gamma_usd: 0,
+                instruments: []
               };
             }
 
@@ -154,17 +177,30 @@ export class GammaService {
             if (option_type === 'call') {
               gammaByExpiration[expirationDate].call_gamma += gammaExposure;
               gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
-            } else {
+            } else if (option_type === 'put') {
               gammaByExpiration[expirationDate].put_gamma += gammaExposure;
               gammaByExpiration[expirationDate].put_gamma_usd += gammaExposureUSD;
             }
+
+            // ДОБАВЛЯЕМ ИНСТРУМЕНТЫ
+            gammaByExpiration[expirationDate].instruments.push({
+              instrument_name,
+              strike,
+              option_type,
+              gamma: parseFloat(gamma.toFixed(8)),
+              open_interest: openInterest,
+              gamma_exposure: gammaExposure,
+              gamma_exposure_usd: gammaExposureUSD,
+              mark_iv: sigma,
+              mark_price: marketData.mark_price || 0
+            });
           });
 
           ws.close();
 
           if (!isResolved) {
             isResolved = true;
-            resolve({ gammaByExpiration, indexPrice });
+            resolve({ gammaByExpiration: gammaByExpiration as unknown as GammaData, indexPrice });
           }
         } catch (error) {
           ws.close();
