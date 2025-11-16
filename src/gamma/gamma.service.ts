@@ -81,7 +81,6 @@ export class GammaService {
           throw new Error(`Failed after ${retries + 1} attempts: ${errorMsg}`);
         }
 
-        // Wait before retry
         await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
       }
     }
@@ -122,28 +121,31 @@ export class GammaService {
     return gamma * Math.pow(indexPrice, 2) * openInterest * 100;
   }
 
-  async getGammaData(): Promise<GammaResponse> {
+  async getGammaData(currency: string = 'BTC'): Promise<GammaResponse> {
     try {
-      console.log('🔄 Starting gamma data fetch...');
+      console.log(`🔄 Starting gamma data fetch for ${currency}...`);
+
+      const curr = currency.toUpperCase();
+      const indexName = `${curr.toLowerCase()}_usd`;
 
       // 1. Get index price
-      console.log('📊 Fetching BTC price...');
-      const priceUrl = `${CONFIG.BASE_URL}/get_index_price?index_name=btc_usd`;
+      console.log(`📊 Fetching ${curr} price...`);
+      const priceUrl = `${CONFIG.BASE_URL}/get_index_price?index_name=${indexName}`;
       const indexPriceData = await this.fetchWithRetry<{
         index_price: number;
       }>(priceUrl);
       const indexPrice = indexPriceData.index_price;
-      console.log(`✓ BTC Price: $${indexPrice.toFixed(2)}`);
+      console.log(`✓ ${curr} Price: $${indexPrice.toFixed(2)}`);
 
       // 2. Get instruments
-      console.log('📋 Fetching instruments...');
-      const instrumentsUrl = `${CONFIG.BASE_URL}/get_instruments?currency=BTC&kind=option`;
+      console.log(`📋 Fetching ${curr} instruments...`);
+      const instrumentsUrl = `${CONFIG.BASE_URL}/get_instruments?currency=${curr}&kind=option`;
       const instruments = await this.fetchWithRetry<any[]>(instrumentsUrl);
       console.log(`✓ Got ${instruments.length} instruments`);
 
       // 3. Get book summary
-      console.log('📈 Fetching market data...');
-      const bookUrl = `${CONFIG.BASE_URL}/get_book_summary_by_currency?currency=BTC&kind=option`;
+      console.log(`📈 Fetching ${curr} market data...`);
+      const bookUrl = `${CONFIG.BASE_URL}/get_book_summary_by_currency?currency=${curr}&kind=option`;
       const bookSummary = await this.fetchWithRetry<any[]>(bookUrl);
       console.log(`✓ Got ${bookSummary.length} market data items`);
 
@@ -255,7 +257,7 @@ export class GammaService {
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : String(error);
-      console.error('❌ Failed to fetch gamma data:', errorMsg);
+      console.error(`❌ Failed to fetch ${currency} gamma data:`, errorMsg);
       throw new Error(`Failed to fetch gamma data: ${errorMsg}`);
     }
   }

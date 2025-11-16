@@ -3,7 +3,8 @@ import {
   Get,
   HttpException,
   HttpStatus,
-  Logger
+  Logger,
+  Query
 } from '@nestjs/common';
 import { GammaService } from './gamma.service';
 import { GammaResponse } from '../types/gamma.types';
@@ -15,11 +16,19 @@ export class GammaController {
   constructor(private readonly gammaService: GammaService) {}
 
   @Get('gamma')
-  async getGamma(): Promise<GammaResponse> {
+  async getGamma(
+    @Query('currency') currency: string = 'BTC'
+  ): Promise<GammaResponse> {
     try {
-      this.logger.log('📨 API request: GET /api/gamma');
-      const data = await this.gammaService.getGammaData();
-      this.logger.log('✓ Successfully returned gamma data');
+      const curr = currency.toUpperCase();
+      this.logger.log(`📨 API request: GET /api/gamma?currency=${curr}`);
+      
+      if (!['BTC', 'ETH'].includes(curr)) {
+        throw new Error('Invalid currency. Supported: BTC, ETH');
+      }
+
+      const data = await this.gammaService.getGammaData(curr);
+      this.logger.log(`✓ Successfully returned ${curr} gamma data`);
       return data;
     } catch (error) {
       const message =
@@ -42,7 +51,8 @@ export class GammaController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       service: 'gamma-calculator',
-      environment: process.env.NODE_ENV || 'unknown'
+      environment: process.env.NODE_ENV || 'unknown',
+      supportedCurrencies: ['BTC', 'ETH']
     };
   }
 }
