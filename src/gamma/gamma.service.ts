@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import * as WebSocket from 'ws';
 import { GammaData, MarketData, GammaResponse } from '../types/gamma.types';
 
 interface Instrument {
@@ -24,50 +23,53 @@ interface GammaExpirationData {
   instruments: Instrument[];
 }
 
+interface ApiResponse<T> {
+  jsonrpc?: string;
+  result?: T;
+  error?: any;
+  testnet?: boolean;
+}
+
 const CONFIG = {
-  WS_URL: 'wss://test.deribit.com/ws/api/v2',
+  BASE_URL: 'https://test.deribit.com/api/v2/public',
   CLIENT_ID: process.env.CLIENT_ID || 'YWTIYiSA',
   CLIENT_SECRET: process.env.CLIENT_SECRET || 'VTyAiD0jUq2X0OWKyKYNBD6FPtmDBg8SUySYph71qNk'
 };
 
 @Injectable()
 export class GammaService {
-  private requestId = 1;
-
-  private sendRequest(ws: WebSocket.WebSocket, method: string, params: any = {}): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const id = this.requestId++;
-      const request = {
-        jsonrpc: '2.0',
-        id: id,
-        method: method,
-        params: params
-      };
-
-      const timeout = setTimeout(() => {
-        reject(new Error(`Timeout: ${method}`));
-      }, 8000);
-
-      const messageHandler = (data: string) => {
-        try {
-          const message = JSON.parse(data);
-          if (message.id === id) {
-            clearTimeout(timeout);
-            ws.removeListener('message', messageHandler);
-            if (message.error) {
-              reject(new Error(message.error.message));
-            } else {
-              resolve(message.result);
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
-      };
-
-      ws.on('message', messageHandler);
-      ws.send(JSON.stringify(request));
+  private async fetchAPI<T>(endpoint: string, params: any = {}): Promise<T> {
+    const url = new URL(`${CONFIG.BASE_URL}${endpoint}`);
+    
+    // Добавляем параметры в URL
+    Object.keys(params).forEach(key => {
+      if (params[key] !== undefined && params[key] !== null) {
+        url.searchParams.append(key, params[key]);
+      }
     });
+
+    try {
+      const response = await fetch(url.toString());
+      
+      if (!response.ok) {
+        throw new Error(`HTTP Error: ${response.status}`);
+      }
+
+      const data: ApiResponse<T> = await response.json();
+      
+      if (data.error) {
+        throw new Error(`API Error: ${data.error.message || JSON.stringify(data.error)}`);
+      }
+
+      if (data.result !== undefined) {
+        return data.result as T;
+      }
+      
+      return data as unknown as T;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`API call failed for ${endpoint}: ${errorMsg}`);
+    }
   }
 
   private calculateGamma(S: number, K: number, T: number, r: number, sigma: number): number | null {
@@ -92,132 +94,120 @@ export class GammaService {
   }
 
   async getGammaData(): Promise<GammaResponse> {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket.WebSocket(CONFIG.WS_URL);
-      let isResolved = false;
+    try {
+      console.log('🔄 Fetching gamma data via REST API...');
 
-      ws.on('error', (error: Error) => {
-        if (!isResolved) {
-          isResolved = true;
-          reject(error);
-        }
+      // 1. Get index price
+      console.log('📊 Getting BTC index price...');
+      const indexPriceData = await this.fetchAPI<{ index_price: number }>('/get_index_price', {
+        index_name: 'btc_usd'
+      });
+      const indexPrice = indexPriceData.index_price;
+      console.log(`✓ BTC Price: $${indexPrice.toFixed(2)}`);
+
+      // 2. Get instruments
+      console.log('📋 Getting instruments...');
+      const instruments = await this.fetchAPI<any[]>('/get_instruments', {
+        currency: 'BTC',
+        kind: 'option'
+      });
+      console.log(`✓ Got ${instruments.length} instruments`);
+
+      // 3. Get book summary (market data)
+      console.log('📈 Getting market data...');
+      const bookSummary = await this.fetchAPI<any[]>('/get_book_summary_by_currency', {
+        currency: 'BTC',
+        kind: 'option'
+      });
+      console.log(`✓ Got ${bookSummary.length} market data items`);
+
+      // 4. Process data
+      const marketDataMap: MarketData = {};
+      bookSummary.forEach((item: any) => {
+        marketDataMap[item.instrument_name] = item;
       });
 
-      ws.on('open', async () => {
-        try {
-          // Authenticate
-          await this.sendRequest(ws, 'public/auth', {
-            grant_type: 'client_credentials',
-            client_id: CONFIG.CLIENT_ID,
-            client_secret: CONFIG.CLIENT_SECRET,
-            scope: 'read'
-          });
+      const gammaByExpiration: { [key: string]: GammaExpirationData } = {};
+      const now = Date.now();
+      const r = 0;
 
-          // Get data
-          const indexPriceResult = await this.sendRequest(ws, 'public/get_index_price', {
-            index_name: 'btc_usd'
-          });
-          const indexPrice = indexPriceResult.index_price as number;
+      let processedCount = 0;
+      let skippedCount = 0;
 
-          const instruments = (await this.sendRequest(ws, 'public/get_instruments', {
-            currency: 'BTC',
-            kind: 'option'
-          })) as any[];
+      instruments.forEach((instrument: any) => {
+        const { instrument_name, strike, expiration_timestamp, option_type } = instrument;
+        const marketData = marketDataMap[instrument_name];
 
-          const bookSummary = (await this.sendRequest(ws, 'public/get_book_summary_by_currency', {
-            currency: 'BTC',
-            kind: 'option'
-          })) as any[];
-
-          // Process data
-          const marketDataMap: MarketData = {};
-          bookSummary.forEach((item: any) => {
-            marketDataMap[item.instrument_name] = item;
-          });
-
-          const gammaByExpiration: { [key: string]: GammaExpirationData } = {};
-          const now = Date.now();
-          const r = 0;
-
-          instruments.forEach((instrument: any) => {
-            const { instrument_name, strike, expiration_timestamp, option_type } = instrument;
-            const marketData = marketDataMap[instrument_name];
-
-            if (!marketData) return;
-
-            const S = indexPrice;
-            const K = strike as number;
-            const T = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365);
-            const sigma = marketData.mark_iv as number;
-
-            const gamma = this.calculateGamma(S, K, T, r, sigma);
-            if (gamma === null) return;
-
-            const openInterest = (marketData.open_interest || 0) as number;
-            const gammaExposure = gamma * openInterest;
-            const gammaExposureUSD = this.calculateGammaInDollars(gamma, indexPrice, openInterest);
-
-            const expirationDate = new Date(expiration_timestamp).toISOString().split('T')[0];
-
-            if (!gammaByExpiration[expirationDate]) {
-              gammaByExpiration[expirationDate] = {
-                total_gamma: 0,
-                total_gamma_usd: 0,
-                call_gamma: 0,
-                call_gamma_usd: 0,
-                put_gamma: 0,
-                put_gamma_usd: 0,
-                instruments: []
-              };
-            }
-
-            gammaByExpiration[expirationDate].total_gamma += gammaExposure;
-            gammaByExpiration[expirationDate].total_gamma_usd += gammaExposureUSD;
-
-            if (option_type === 'call') {
-              gammaByExpiration[expirationDate].call_gamma += gammaExposure;
-              gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
-            } else if (option_type === 'put') {
-              gammaByExpiration[expirationDate].put_gamma += gammaExposure;
-              gammaByExpiration[expirationDate].put_gamma_usd += gammaExposureUSD;
-            }
-
-            // ДОБАВЛЯЕМ ИНСТРУМЕНТЫ
-            gammaByExpiration[expirationDate].instruments.push({
-              instrument_name,
-              strike,
-              option_type,
-              gamma: parseFloat(gamma.toFixed(8)),
-              open_interest: openInterest,
-              gamma_exposure: gammaExposure,
-              gamma_exposure_usd: gammaExposureUSD,
-              mark_iv: sigma,
-              mark_price: marketData.mark_price || 0
-            });
-          });
-
-          ws.close();
-
-          if (!isResolved) {
-            isResolved = true;
-            resolve({ gammaByExpiration: gammaByExpiration as unknown as GammaData, indexPrice });
-          }
-        } catch (error) {
-          ws.close();
-          if (!isResolved) {
-            isResolved = true;
-            reject(error instanceof Error ? error : new Error(String(error)));
-          }
+        if (!marketData) {
+          skippedCount++;
+          return;
         }
+
+        const S = indexPrice;
+        const K = strike as number;
+        const T = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365);
+        const sigma = marketData.mark_iv as number;
+
+        const gamma = this.calculateGamma(S, K, T, r, sigma);
+        if (gamma === null) {
+          skippedCount++;
+          return;
+        }
+
+        processedCount++;
+
+        const openInterest = (marketData.open_interest || 0) as number;
+        const gammaExposure = gamma * openInterest;
+        const gammaExposureUSD = this.calculateGammaInDollars(gamma, indexPrice, openInterest);
+
+        const expirationDate = new Date(expiration_timestamp).toISOString().split('T')[0];
+
+        if (!gammaByExpiration[expirationDate]) {
+          gammaByExpiration[expirationDate] = {
+            total_gamma: 0,
+            total_gamma_usd: 0,
+            call_gamma: 0,
+            call_gamma_usd: 0,
+            put_gamma: 0,
+            put_gamma_usd: 0,
+            instruments: []
+          };
+        }
+
+        gammaByExpiration[expirationDate].total_gamma += gammaExposure;
+        gammaByExpiration[expirationDate].total_gamma_usd += gammaExposureUSD;
+
+        if (option_type === 'call') {
+          gammaByExpiration[expirationDate].call_gamma += gammaExposure;
+          gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
+        } else if (option_type === 'put') {
+          gammaByExpiration[expirationDate].put_gamma += gammaExposure;
+          gammaByExpiration[expirationDate].put_gamma_usd += gammaExposureUSD;
+        }
+
+        gammaByExpiration[expirationDate].instruments.push({
+          instrument_name,
+          strike,
+          option_type,
+          gamma: parseFloat(gamma.toFixed(8)),
+          open_interest: openInterest,
+          gamma_exposure: gammaExposure,
+          gamma_exposure_usd: gammaExposureUSD,
+          mark_iv: sigma,
+          mark_price: marketData.mark_price || 0
+        });
       });
 
-      setTimeout(() => {
-        if (!isResolved) {
-          isResolved = true;
-          ws.close();
-          reject(new Error('Connection timeout'));
-        }
-      }, 15000);
-    });
+      console.log(`✓ Processed: ${processedCount}, Skipped: ${skippedCount}`);
+
+      const sortedExpirations = Object.keys(gammaByExpiration).sort();
+      console.log(`✓ Got data for ${sortedExpirations.length} expiration dates`);
+
+      return { gammaByExpiration: gammaByExpiration as unknown as GammaData, indexPrice };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('❌ Error fetching gamma data:', errorMsg);
+      throw new Error(`Failed to fetch gamma data: ${errorMsg}`);
+    }
   }
 }

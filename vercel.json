@@ -2,20 +2,8 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "nodejs",
-  "functions": {
-    "src/**/*.ts": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/src/main.js"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/src/main.js"
-    }
-  ]
+  "env": {
+    "CLIENT_ID": "@client_id",
+    "CLIENT_SECRET": "@client_secret"
+  }
 }

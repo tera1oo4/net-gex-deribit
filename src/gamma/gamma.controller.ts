@@ -9,15 +9,22 @@ export class GammaController {
   @Get('gamma')
   async getGamma(): Promise<GammaResponse> {
     try {
+      console.log('📨 API request received for /api/gamma');
       const data = await this.gammaService.getGammaData();
+      console.log('✓ Returning gamma data');
       return data;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error in getGamma:', error);
+      console.error('❌ Controller error:', message);
       throw new HttpException(
-        { error: message, status: 'error' },
+        { error: message, status: 'error', timestamp: new Date() },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  @Get('health')
+  getHealth() {
+    return { status: 'ok', timestamp: new Date(), service: 'gamma-calculator' };
   }
 }
