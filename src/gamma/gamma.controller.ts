@@ -1,23 +1,36 @@
-import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Logger
+} from '@nestjs/common';
 import { GammaService } from './gamma.service';
 import { GammaResponse } from '../types/gamma.types';
 
 @Controller('api')
 export class GammaController {
+  private readonly logger = new Logger(GammaController.name);
+
   constructor(private readonly gammaService: GammaService) {}
 
   @Get('gamma')
   async getGamma(): Promise<GammaResponse> {
     try {
-      console.log('📨 API request received for /api/gamma');
+      this.logger.log('📨 API request: GET /api/gamma');
       const data = await this.gammaService.getGammaData();
-      console.log('✓ Returning gamma data');
+      this.logger.log('✓ Successfully returned gamma data');
       return data;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      console.error('❌ Controller error:', message);
+      const message =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`❌ Error in getGamma: ${message}`, error);
       throw new HttpException(
-        { error: message, status: 'error', timestamp: new Date() },
+        {
+          error: message,
+          status: 'error',
+          timestamp: new Date().toISOString()
+        },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -25,6 +38,11 @@ export class GammaController {
 
   @Get('health')
   getHealth() {
-    return { status: 'ok', timestamp: new Date(), service: 'gamma-calculator' };
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      service: 'gamma-calculator',
+      environment: process.env.NODE_ENV || 'unknown'
+    };
   }
 }

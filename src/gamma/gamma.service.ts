@@ -32,55 +32,80 @@ interface ApiResponse<T> {
 
 const CONFIG = {
   BASE_URL: 'https://test.deribit.com/api/v2/public',
-  CLIENT_ID: process.env.CLIENT_ID || 'YWTIYiSA',
-  CLIENT_SECRET: process.env.CLIENT_SECRET || 'VTyAiD0jUq2X0OWKyKYNBD6FPtmDBg8SUySYph71qNk'
+  TIMEOUT: 15000,
+  RETRIES: 2
 };
 
 @Injectable()
 export class GammaService {
-  private async fetchAPI<T>(endpoint: string, params: any = {}): Promise<T> {
-    const url = new URL(`${CONFIG.BASE_URL}${endpoint}`);
-    
-    // Добавляем параметры в URL
-    Object.keys(params).forEach(key => {
-      if (params[key] !== undefined && params[key] !== null) {
-        url.searchParams.append(key, params[key]);
-      }
-    });
+  private async fetchWithRetry<T>(
+    url: string,
+    retries: number = CONFIG.RETRIES,
+  ): Promise<T> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), CONFIG.TIMEOUT);
 
-    try {
-      const response = await fetch(url.toString());
-      
-      if (!response.ok) {
-        throw new Error(`HTTP Error: ${response.status}`);
-      }
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (deribit-gamma-calc)',
+          },
+          signal: controller.signal,
+        });
 
-      const data: ApiResponse<T> = await response.json();
-      
-      if (data.error) {
-        throw new Error(`API Error: ${data.error.message || JSON.stringify(data.error)}`);
-      }
+        clearTimeout(timeoutId);
 
-      if (data.result !== undefined) {
-        return data.result as T;
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data: ApiResponse<T> = await response.json();
+
+        if (data.error) {
+          throw new Error(`API Error: ${JSON.stringify(data.error)}`);
+        }
+
+        if (data.result !== undefined) {
+          return data.result as T;
+        }
+
+        return data as unknown as T;
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`Attempt ${attempt + 1}/${retries + 1} failed: ${errorMsg}`);
+
+        if (attempt === retries) {
+          throw new Error(`Failed after ${retries + 1} attempts: ${errorMsg}`);
+        }
+
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
       }
-      
-      return data as unknown as T;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`API call failed for ${endpoint}: ${errorMsg}`);
     }
+
+    throw new Error('Unknown error in fetchWithRetry');
   }
 
-  private calculateGamma(S: number, K: number, T: number, r: number, sigma: number): number | null {
+  private calculateGamma(
+    S: number,
+    K: number,
+    T: number,
+    r: number,
+    sigma: number,
+  ): number | null {
     if (!S || S <= 0 || !K || K <= 0 || !T || T <= 0 || !sigma || sigma <= 0) {
       return null;
     }
 
     try {
       const sqrtT = Math.sqrt(T);
-      const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
-      const nPrimeD1 = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1);
+      const d1 =
+        (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+      const nPrimeD1 =
+        (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1);
       const gamma = nPrimeD1 / (S * sigma * sqrtT);
       return isFinite(gamma) ? gamma : null;
     } catch (error) {
@@ -88,37 +113,38 @@ export class GammaService {
     }
   }
 
-  private calculateGammaInDollars(gamma: number, indexPrice: number, openInterest: number): number {
+  private calculateGammaInDollars(
+    gamma: number,
+    indexPrice: number,
+    openInterest: number,
+  ): number {
     if (!gamma || gamma === 0) return 0;
     return gamma * Math.pow(indexPrice, 2) * openInterest * 100;
   }
 
   async getGammaData(): Promise<GammaResponse> {
     try {
-      console.log('🔄 Fetching gamma data via REST API...');
+      console.log('🔄 Starting gamma data fetch...');
 
       // 1. Get index price
-      console.log('📊 Getting BTC index price...');
-      const indexPriceData = await this.fetchAPI<{ index_price: number }>('/get_index_price', {
-        index_name: 'btc_usd'
-      });
+      console.log('📊 Fetching BTC price...');
+      const priceUrl = `${CONFIG.BASE_URL}/get_index_price?index_name=btc_usd`;
+      const indexPriceData = await this.fetchWithRetry<{
+        index_price: number;
+      }>(priceUrl);
       const indexPrice = indexPriceData.index_price;
       console.log(`✓ BTC Price: $${indexPrice.toFixed(2)}`);
 
       // 2. Get instruments
-      console.log('📋 Getting instruments...');
-      const instruments = await this.fetchAPI<any[]>('/get_instruments', {
-        currency: 'BTC',
-        kind: 'option'
-      });
+      console.log('📋 Fetching instruments...');
+      const instrumentsUrl = `${CONFIG.BASE_URL}/get_instruments?currency=BTC&kind=option`;
+      const instruments = await this.fetchWithRetry<any[]>(instrumentsUrl);
       console.log(`✓ Got ${instruments.length} instruments`);
 
-      // 3. Get book summary (market data)
-      console.log('📈 Getting market data...');
-      const bookSummary = await this.fetchAPI<any[]>('/get_book_summary_by_currency', {
-        currency: 'BTC',
-        kind: 'option'
-      });
+      // 3. Get book summary
+      console.log('📈 Fetching market data...');
+      const bookUrl = `${CONFIG.BASE_URL}/get_book_summary_by_currency?currency=BTC&kind=option`;
+      const bookSummary = await this.fetchWithRetry<any[]>(bookUrl);
       console.log(`✓ Got ${bookSummary.length} market data items`);
 
       // 4. Process data
@@ -135,78 +161,101 @@ export class GammaService {
       let skippedCount = 0;
 
       instruments.forEach((instrument: any) => {
-        const { instrument_name, strike, expiration_timestamp, option_type } = instrument;
-        const marketData = marketDataMap[instrument_name];
+        try {
+          const { instrument_name, strike, expiration_timestamp, option_type } =
+            instrument;
+          const marketData = marketDataMap[instrument_name];
 
-        if (!marketData) {
+          if (!marketData) {
+            skippedCount++;
+            return;
+          }
+
+          const S = indexPrice;
+          const K = strike as number;
+          const T = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365);
+          const sigma = marketData.mark_iv as number;
+
+          const gamma = this.calculateGamma(S, K, T, r, sigma);
+          if (gamma === null) {
+            skippedCount++;
+            return;
+          }
+
+          processedCount++;
+
+          const openInterest = (marketData.open_interest || 0) as number;
+          const gammaExposure = gamma * openInterest;
+          const gammaExposureUSD = this.calculateGammaInDollars(
+            gamma,
+            indexPrice,
+            openInterest,
+          );
+
+          const expirationDate = new Date(expiration_timestamp)
+            .toISOString()
+            .split('T')[0];
+
+          if (!gammaByExpiration[expirationDate]) {
+            gammaByExpiration[expirationDate] = {
+              total_gamma: 0,
+              total_gamma_usd: 0,
+              call_gamma: 0,
+              call_gamma_usd: 0,
+              put_gamma: 0,
+              put_gamma_usd: 0,
+              instruments: []
+            };
+          }
+
+          gammaByExpiration[expirationDate].total_gamma += gammaExposure;
+          gammaByExpiration[expirationDate].total_gamma_usd +=
+            gammaExposureUSD;
+
+          if (option_type === 'call') {
+            gammaByExpiration[expirationDate].call_gamma += gammaExposure;
+            gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
+          } else if (option_type === 'put') {
+            gammaByExpiration[expirationDate].put_gamma += gammaExposure;
+            gammaByExpiration[expirationDate].put_gamma_usd += gammaExposureUSD;
+          }
+
+          gammaByExpiration[expirationDate].instruments.push({
+            instrument_name,
+            strike,
+            option_type,
+            gamma: parseFloat(gamma.toFixed(8)),
+            open_interest: openInterest,
+            gamma_exposure: gammaExposure,
+            gamma_exposure_usd: gammaExposureUSD,
+            mark_iv: sigma,
+            mark_price: marketData.mark_price || 0
+          });
+        } catch (error) {
+          console.warn(
+            `Failed to process instrument: ${error instanceof Error ? error.message : String(error)}`,
+          );
           skippedCount++;
-          return;
         }
-
-        const S = indexPrice;
-        const K = strike as number;
-        const T = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365);
-        const sigma = marketData.mark_iv as number;
-
-        const gamma = this.calculateGamma(S, K, T, r, sigma);
-        if (gamma === null) {
-          skippedCount++;
-          return;
-        }
-
-        processedCount++;
-
-        const openInterest = (marketData.open_interest || 0) as number;
-        const gammaExposure = gamma * openInterest;
-        const gammaExposureUSD = this.calculateGammaInDollars(gamma, indexPrice, openInterest);
-
-        const expirationDate = new Date(expiration_timestamp).toISOString().split('T')[0];
-
-        if (!gammaByExpiration[expirationDate]) {
-          gammaByExpiration[expirationDate] = {
-            total_gamma: 0,
-            total_gamma_usd: 0,
-            call_gamma: 0,
-            call_gamma_usd: 0,
-            put_gamma: 0,
-            put_gamma_usd: 0,
-            instruments: []
-          };
-        }
-
-        gammaByExpiration[expirationDate].total_gamma += gammaExposure;
-        gammaByExpiration[expirationDate].total_gamma_usd += gammaExposureUSD;
-
-        if (option_type === 'call') {
-          gammaByExpiration[expirationDate].call_gamma += gammaExposure;
-          gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
-        } else if (option_type === 'put') {
-          gammaByExpiration[expirationDate].put_gamma += gammaExposure;
-          gammaByExpiration[expirationDate].put_gamma_usd += gammaExposureUSD;
-        }
-
-        gammaByExpiration[expirationDate].instruments.push({
-          instrument_name,
-          strike,
-          option_type,
-          gamma: parseFloat(gamma.toFixed(8)),
-          open_interest: openInterest,
-          gamma_exposure: gammaExposure,
-          gamma_exposure_usd: gammaExposureUSD,
-          mark_iv: sigma,
-          mark_price: marketData.mark_price || 0
-        });
       });
 
       console.log(`✓ Processed: ${processedCount}, Skipped: ${skippedCount}`);
 
       const sortedExpirations = Object.keys(gammaByExpiration).sort();
-      console.log(`✓ Got data for ${sortedExpirations.length} expiration dates`);
+      console.log(`✓ Got ${sortedExpirations.length} expiration dates`);
 
-      return { gammaByExpiration: gammaByExpiration as unknown as GammaData, indexPrice };
+      if (sortedExpirations.length === 0) {
+        throw new Error('No expiration dates found in response');
+      }
+
+      return {
+        gammaByExpiration: gammaByExpiration as unknown as GammaData,
+        indexPrice
+      };
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('❌ Error fetching gamma data:', errorMsg);
+      const errorMsg =
+        error instanceof Error ? error.message : String(error);
+      console.error('❌ Failed to fetch gamma data:', errorMsg);
       throw new Error(`Failed to fetch gamma data: ${errorMsg}`);
     }
   }
