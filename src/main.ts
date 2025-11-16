@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import * as path from 'path';
+import * as fs from 'fs';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -9,16 +10,33 @@ async function bootstrap() {
   // CORS
   app.enableCors();
 
-  // Serve static files
+  // Serve static files from public folder
   const publicPath = path.join(__dirname, '..', 'public');
-  app.useStaticAssets(publicPath, {
-    prefix: '/',
-  });
+  
+  if (fs.existsSync(publicPath)) {
+    app.useStaticAssets(publicPath, {
+      prefix: '/',
+      maxAge: '1d',
+      etag: false,
+    });
+  }
 
-  // Default route to index.html
+  // Default route to index.html for non-API routes
   app.use((req, res, next) => {
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(path.join(publicPath, 'index.html'));
+    // Skip API routes
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    
+    // Skip files with extensions
+    if (req.path.includes('.')) {
+      return next();
+    }
+    
+    // Serve index.html
+    const indexPath = path.join(publicPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
     } else {
       next();
     }
@@ -26,10 +44,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
-  console.log(`✓ Server is running on port ${port}`);
+  console.log(`✓ App is running on port ${port}`);
 }
 
-bootstrap().catch(err => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+bootstrap();

@@ -7,7 +7,7 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "dev": "nest start --watch",
-    "prod": "node dist/main.js"
+    "prod": "NODE_ENV=production node dist/main.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.2.8",

@@ -1,9 +1,5 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "framework": "nodejs",
-  "env": {
-    "CLIENT_ID": "@client_id",
-    "CLIENT_SECRET": "@client_secret"
-  }
+  "framework": "nodejs"
 }
