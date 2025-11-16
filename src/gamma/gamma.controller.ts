@@ -13,8 +13,9 @@ export class GammaController {
       return data;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Error in getGamma:', error);
       throw new HttpException(
-        { error: message },
+        { error: message, status: 'error' },
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

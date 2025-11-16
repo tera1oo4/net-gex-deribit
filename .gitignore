@@ -2,12 +2,13 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=node
 
 node_modules/
+dist/
 .env
 .env.local
 .vercel/
-*.log
-gamma_chart.html
 .DS_Store
+*.log
+.turbo/
 
 
 ### Node ###
