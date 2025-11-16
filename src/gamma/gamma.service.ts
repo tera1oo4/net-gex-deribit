@@ -31,7 +31,7 @@ interface ApiResponse<T> {
 }
 
 const CONFIG = {
-  BASE_URL: 'https://test.deribit.com/api/v2/public',
+  BASE_URL: 'https://deribit.com/api/v2/public',
   TIMEOUT: 15000,
   RETRIES: 2
 };
