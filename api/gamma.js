@@ -5,8 +5,8 @@ const path = require('path');
 // Конфигурация - берём из переменных окружения для Vercel
 const CONFIG = {
   WS_URL: 'wss://test.deribit.com/ws/api/v2',
-  CLIENT_ID: process.env.CLIENT_ID || 'YWTIYiSA',
-  CLIENT_SECRET: process.env.CLIENT_SECRET || 'VTyAiD0jUq2X0OWKyKYNBD6FPtmDBg8SUySYph71qNk'
+  CLIENT_ID: process.env.CLIENT_ID,
+  CLIENT_SECRET: process.env.CLIENT_SECRET
 };
 
 let ws;

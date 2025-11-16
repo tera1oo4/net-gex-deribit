@@ -1,14 +1,4 @@
 {
   "buildCommand": "npm run build",
-  "framework": "nodejs",
-  "functions": {
-    "api/gamma.js": {
-      "memory": 1024,
-      "maxDuration": 300
-    }
-  },
-  "env": {
-    "CLIENT_ID": "@client_id",
-    "CLIENT_SECRET": "@client_secret"
-  }
+  "outputDirectory": "dist"
 }
