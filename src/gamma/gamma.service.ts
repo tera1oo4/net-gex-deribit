@@ -11,6 +11,9 @@ interface Instrument {
   gamma_exposure_usd: number;
   mark_iv: number;
   mark_price: number;
+  volume_24h: number;
+  bid_volume: number;
+  ask_volume: number;
 }
 
 interface GammaExpirationData {
@@ -26,12 +29,15 @@ interface GammaExpirationData {
 interface ApiResponse<T> {
   jsonrpc?: string;
   result?: T;
-  error?: any;
+  error?: {
+    message: string;
+    code?: number;
+  };
   testnet?: boolean;
 }
 
 const CONFIG = {
-  BASE_URL: 'https://deribit.com/api/v2/public',
+  BASE_URL: 'https://www.deribit.com/api/v2/public',
   TIMEOUT: 15000,
   RETRIES: 2
 };
@@ -62,10 +68,11 @@ export class GammaService {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
+        // Правильная типизация здесь
         const data: ApiResponse<T> = await response.json();
 
         if (data.error) {
-          throw new Error(`API Error: ${JSON.stringify(data.error)}`);
+          throw new Error(`API Error: ${data.error.message}`);
         }
 
         if (data.result !== undefined) {
@@ -105,7 +112,12 @@ export class GammaService {
         (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
       const nPrimeD1 =
         (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1);
-      const gamma = nPrimeD1 / (S * sigma * sqrtT);
+
+      // Правильная формула гаммы для Deribit опционов
+      // Для BTC/ETH опционов: 1 контракт = 1 единица базового актива
+      const contractSize = 1; // 1 BTC или 1 ETH на контракт
+      const gamma = (nPrimeD1 / (S * sigma * sqrtT)) * contractSize;
+
       return isFinite(gamma) ? gamma : null;
     } catch (error) {
       return null;
@@ -118,7 +130,11 @@ export class GammaService {
     openInterest: number,
   ): number {
     if (!gamma || gamma === 0) return 0;
-    return gamma * Math.pow(indexPrice, 2) * openInterest * 100;
+
+    // Правильная формула для расчёта гаммы в долларах (GEX)
+    // GEX = Γ × S² × OI × contractSize
+    const contractSize = 1; // 1 BTC или 1 ETH на контракт
+    return gamma * Math.pow(indexPrice, 2) * openInterest * contractSize;
   }
 
   async getGammaData(currency: string = 'BTC'): Promise<GammaResponse> {
@@ -187,7 +203,11 @@ export class GammaService {
           processedCount++;
 
           const openInterest = (marketData.open_interest || 0) as number;
-          const gammaExposure = gamma * openInterest;
+
+          // Правильный расчёт экспозиции гаммы (с учётом размера контракта)
+          const contractSize = 1; // 1 BTC или 1 ETH на контракт
+          const gammaExposure = gamma * openInterest * contractSize;
+
           const gammaExposureUSD = this.calculateGammaInDollars(
             gamma,
             indexPrice,
@@ -231,7 +251,10 @@ export class GammaService {
             gamma_exposure: gammaExposure,
             gamma_exposure_usd: gammaExposureUSD,
             mark_iv: sigma,
-            mark_price: marketData.mark_price || 0
+            mark_price: marketData.mark_price || 0,
+            volume_24h: marketData.stats?.volume || marketData.volume_24h || 0,
+            bid_volume: marketData.stats?.volume_bid || 0,
+            ask_volume: marketData.stats?.volume_ask || 0
           });
         } catch (error) {
           console.warn(
