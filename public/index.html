@@ -686,7 +686,7 @@ canvas {
                                 label += ': ';
                             }
                             const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed;
-                            label += value.toFixed(8);
+                            label += value.toString();
                             return label;
                         }
                     }
@@ -708,7 +708,7 @@ canvas {
                                         label += ': ';
                                     }
                                     const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed;
-                                    label += value.toFixed(8);
+                                    label += value.toString();
                                     return label;
                                 }
                             }
@@ -894,7 +894,7 @@ canvas {
             createChart(chartId4, 'line', sortedStrikes, [
                 {
                     label: 'Call Volume 24h',
-                    data: sortedStrikes.map(s => strikes[s].call_volume),
+                    data: sortedStrikes.map(s => strikes[s].call_volume || 0),
                     borderColor: '#06A77D',
                     backgroundColor: 'rgba(6, 167, 125, 0.1)',
                     borderWidth: 2,
@@ -905,7 +905,7 @@ canvas {
                 },
                 {
                     label: 'Put Volume 24h',
-                    data: sortedStrikes.map(s => strikes[s].put_volume),
+                    data: sortedStrikes.map(s => strikes[s].put_volume || 0),
                     borderColor: '#D62828',
                     backgroundColor: 'rgba(214, 40, 40, 0.1)',
                     borderWidth: 2,

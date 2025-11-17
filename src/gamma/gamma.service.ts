@@ -131,10 +131,12 @@ export class GammaService {
   ): number {
     if (!gamma || gamma === 0) return 0;
 
-    // Правильная формула для расчёта гаммы в долларах (GEX)
-    // GEX = Γ × S² × OI × contractSize
-    const contractSize = 1; // 1 BTC или 1 ETH на контракт
-    return gamma * Math.pow(indexPrice, 2) * openInterest * contractSize;
+    // Новая формула для расчёта гаммы в долларах (GEX)
+    // GEX = OI × Γ × 100 × k × S × (1% × S)
+    // где k - коэффициент масштабирования (обычно 1)
+    const k = 1; // коэффициент масштабирования
+    const onePercentOfSpot = 0.01 * indexPrice;
+    return openInterest * gamma * 100 * k * indexPrice * onePercentOfSpot;
   }
 
   async getGammaData(currency: string = 'BTC'): Promise<GammaResponse> {
@@ -252,9 +254,9 @@ export class GammaService {
             gamma_exposure_usd: gammaExposureUSD,
             mark_iv: sigma,
             mark_price: marketData.mark_price || 0,
-            volume_24h: marketData.stats?.volume || marketData.volume_24h || 0,
-            bid_volume: marketData.stats?.volume_bid || 0,
-            ask_volume: marketData.stats?.volume_ask || 0
+            volume_24h: marketData.volume || marketData.volume_24h || marketData.stats?.volume || 0,
+            bid_volume: marketData.bid_volume || marketData.stats?.volume_bid || 0,
+            ask_volume: marketData.ask_volume || marketData.stats?.volume_ask || 0
           });
         } catch (error) {
           console.warn(
