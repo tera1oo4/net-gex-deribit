@@ -543,17 +543,17 @@ canvas {
                 <div class="stat-box">
                     <div class="stat-label">📊 Total Gamma</div>
                     <div class="stat-value">${totalGammas.reduce((a, b) => a + b, 0).toFixed(6)}</div>
-                    <div class="stat-value usd">≈ $${(totalGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}M/100bps</div>
+                    <div class="stat-value usd">≈ $${(totalGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}/100bps</div>
                 </div>
                 <div class="stat-box call">
                     <div class="stat-label">📈 Call Gamma</div>
                     <div class="stat-value">${callGammas.reduce((a, b) => a + b, 0).toFixed(6)}</div>
-                    <div class="stat-value usd">≈ $${(callGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}M/100bps</div>
+                    <div class="stat-value usd">≈ $${(callGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}/100bps</div>
                 </div>
                 <div class="stat-box put">
                     <div class="stat-label">📉 Put Gamma</div>
                     <div class="stat-value">${putGammas.reduce((a, b) => a + b, 0).toFixed(6)}</div>
-                    <div class="stat-value usd">≈ $${(putGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}M/100bps</div>
+                    <div class="stat-value usd">≈ $${(putGammasUSD.reduce((a, b) => a + b, 0) / 1e6).toFixed(2)}/100bps</div>
                 </div>
                 <div class="stat-box">
                     <div class="stat-label">📅 Expiration Dates</div>

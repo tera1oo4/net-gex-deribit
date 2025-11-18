@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { writeFileSync } from 'fs';
+import { join } from 'path';
 import { GammaData, MarketData, GammaResponse } from '../types/gamma.types';
 
 interface Instrument {
@@ -191,30 +193,43 @@ export class GammaService {
             return;
           }
 
-          const S = indexPrice;
-          const K = strike as number;
-          const T = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365);
-          const sigma = marketData.mark_iv as number;
+          // Получаем данные из API и рассчитываем net GEX напрямую
+          const openInterest = (marketData.open_interest || 0) as number;
+          const markIv = (marketData.mark_iv || 0) as number / 100; // конвертируем из процентов в десятичное число
+          const timeToExpiry = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365); // в годах
 
-          const gamma = this.calculateGamma(S, K, T, r, sigma);
-          if (gamma === null) {
-            skippedCount++;
-            return;
+          // Рассчитываем net GEX напрямую по формуле:
+          // Net GEX = OI × 0.01 × S² × √(T) × N'(d1) / (σ × S × T)
+          // где N'(d1) = (1/√(2π)) × e^(-d1²/2)
+          // d1 = (ln(S/K) + (r + σ²/2) × T) / (σ × √T)
+
+          let netGEX = 0;
+          if (openInterest > 0 && markIv > 0 && timeToExpiry > 0) {
+            const S = indexPrice;
+            const K = strike as number;
+            const r = 0; // безрисковая ставка
+            const sigma = markIv;
+
+            const sqrtT = Math.sqrt(timeToExpiry);
+            const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * timeToExpiry) / (sigma * sqrtT);
+            const nPrimeD1 = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1);
+
+            // Net GEX для одного контракта
+            const contractSize = 1; // 1 BTC или 1 ETH на контракт
+            const onePercentMove = 0.01 * S;
+            netGEX = openInterest * nPrimeD1 * onePercentMove * S * contractSize;
+
+            // Учитываем тип опциона (call/put) для знака
+            if (option_type === 'put') {
+              netGEX = -netGEX; // put опционы имеют отрицательный net GEX
+            }
           }
 
+          // Убираем расчет гаммы и используем net GEX напрямую
+          const gammaExposure = Math.abs(netGEX);
+          const gammaExposureUSD = Math.abs(netGEX);
+
           processedCount++;
-
-          const openInterest = (marketData.open_interest || 0) as number;
-
-          // Правильный расчёт экспозиции гаммы (с учётом размера контракта)
-          const contractSize = 1; // 1 BTC или 1 ETH на контракт
-          const gammaExposure = gamma * openInterest * contractSize;
-
-          const gammaExposureUSD = this.calculateGammaInDollars(
-            gamma,
-            indexPrice,
-            openInterest,
-          );
 
           const expirationDate = new Date(expiration_timestamp)
             .toISOString()
@@ -248,15 +263,15 @@ export class GammaService {
             instrument_name,
             strike,
             option_type,
-            gamma: parseFloat(gamma.toFixed(8)),
+            gamma: 0, //不再使用单独的gamma计算
             open_interest: openInterest,
             gamma_exposure: gammaExposure,
             gamma_exposure_usd: gammaExposureUSD,
-            mark_iv: sigma,
+            mark_iv: markIv,
             mark_price: marketData.mark_price || 0,
-            volume_24h: marketData.volume || marketData.volume_24h || marketData.stats?.volume || 0,
-            bid_volume: marketData.bid_volume || marketData.stats?.volume_bid || 0,
-            ask_volume: marketData.ask_volume || marketData.stats?.volume_ask || 0
+            volume_24h: marketData.volume || marketData.volume_24h || marketData.stats?.volume || marketData.stats?.volume_24h || 0,
+            bid_volume: marketData.bid_volume || marketData.stats?.volume_bid || marketData.stats?.bid_volume || 0,
+            ask_volume: marketData.ask_volume || marketData.stats?.volume_ask || marketData.stats?.ask_volume || 0
           });
         } catch (error) {
           console.warn(
@@ -273,6 +288,40 @@ export class GammaService {
 
       if (sortedExpirations.length === 0) {
         throw new Error('No expiration dates found in response');
+      }
+
+      // Save API data to JSON file
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `gamma-data-${currency.toLowerCase()}-${timestamp}.json`;
+        const filePath = join(process.cwd(), 'data', fileName);
+
+        const apiData = {
+          timestamp: new Date().toISOString(),
+          currency: currency,
+          indexPrice: indexPrice,
+          processedCount: processedCount,
+          skippedCount: skippedCount,
+          totalExpirations: sortedExpirations.length,
+          expirationDates: sortedExpirations,
+          gammaByExpiration: gammaByExpiration,
+          rawData: {
+            instruments: instruments,
+            bookSummary: bookSummary
+          }
+        };
+
+        // Ensure data directory exists
+        const fs = require('fs');
+        const dataDir = join(process.cwd(), 'data');
+        if (!fs.existsSync(dataDir)) {
+          fs.mkdirSync(dataDir, { recursive: true });
+        }
+
+        writeFileSync(filePath, JSON.stringify(apiData, null, 2));
+        console.log(`📁 API data saved to: ${filePath}`);
+      } catch (fileError) {
+        console.warn(`⚠️ Failed to save API data to file: ${fileError instanceof Error ? fileError.message : String(fileError)}`);
       }
 
       return {
