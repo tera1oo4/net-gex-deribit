@@ -97,48 +97,111 @@ export class GammaService {
     throw new Error('Unknown error in fetchWithRetry');
   }
 
-  private calculateGamma(
-    S: number,
-    K: number,
-    T: number,
-    r: number,
-    sigma: number,
-  ): number | null {
-    if (!S || S <= 0 || !K || K <= 0 || !T || T <= 0 || !sigma || sigma <= 0) {
-      return null;
-    }
 
+  async getOrderBookGamma(instrumentName: string): Promise<any> {
     try {
-      const sqrtT = Math.sqrt(T);
-      const d1 =
-        (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
-      const nPrimeD1 =
-        (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1);
+      console.log(`🔄 Starting order book gamma fetch for ${instrumentName}...`);
 
-      // Правильная формула гаммы для Deribit опционов
-      // Для BTC/ETH опционов: 1 контракт = 1 единица базового актива
-      const contractSize = 1; // 1 BTC или 1 ETH на контракт
-      const gamma = (nPrimeD1 / (S * sigma * sqrtT)) * contractSize;
+      // 1. Get order book data
+      console.log(`📊 Fetching order book for ${instrumentName}...`);
+      const orderBookUrl = `${CONFIG.BASE_URL}/get_order_book?instrument_name=${instrumentName}`;
+      const orderBookData = await this.fetchWithRetry<any>(orderBookUrl);
+      console.log(`✓ Got order book data for ${instrumentName}`);
 
-      return isFinite(gamma) ? gamma : null;
+      // 2. Get instrument details to calculate gamma
+      console.log(`📋 Fetching instrument details for ${instrumentName}...`);
+      const instrumentUrl = `${CONFIG.BASE_URL}/get_instrument?instrument_name=${instrumentName}`;
+      const instrumentData = await this.fetchWithRetry<any>(instrumentUrl);
+      console.log(`✓ Got instrument details for ${instrumentName}`);
+
+      // 3. Calculate gamma from order book data
+      const gammaData = this.calculateOrderBookGamma(orderBookData, instrumentData);
+
+      return {
+        instrument_name: instrumentName,
+        timestamp: new Date().toISOString(),
+        gamma_data: gammaData,
+        raw_data: {
+          order_book: orderBookData,
+          instrument: instrumentData
+        }
+      };
     } catch (error) {
-      return null;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Failed to fetch order book gamma for ${instrumentName}:`, errorMsg);
+      throw new Error(`Failed to fetch order book gamma: ${errorMsg}`);
     }
   }
 
-  private calculateGammaInDollars(
-    gamma: number,
-    indexPrice: number,
-    openInterest: number,
-  ): number {
-    if (!gamma || gamma === 0) return 0;
+  private calculateOrderBookGamma(orderBookData: any, instrumentData: any): any {
+    try {
+      console.log('Calculating order book gamma...');
+      console.log('Order book data:', JSON.stringify(orderBookData, null, 2));
+      console.log('Instrument data:', JSON.stringify(instrumentData, null, 2));
 
-    // Новая формула для расчёта гаммы в долларах (GEX)
-    // GEX = OI × Γ × 100 × k × S × (1% × S)
-    // где k - коэффициент масштабирования (обычно 1)
-    const k = 1; // коэффициент масштабирования
-    const onePercentOfSpot = 0.01 * indexPrice;
-    return openInterest * gamma * 100 * k * indexPrice * onePercentOfSpot;
+      const instrument = instrumentData;
+      const orderBook = orderBookData;
+
+      if (!instrument || !orderBook) {
+        throw new Error('Invalid data structure');
+      }
+
+      const { mark_price, mark_iv, underlying_price, greeks } = orderBook;
+      const { bids, asks } = orderBook;
+
+      console.log('Order book details:', { mark_price, mark_iv, underlying_price, greeks });
+      console.log('Order book details:', { bids: bids?.length, asks: asks?.length });
+
+      // Use the gamma from the order book greeks if available
+      const gammaFromAPI = greeks?.gamma;
+
+      let totalBidGamma = 0;
+      let totalAskGamma = 0;
+      let bidCount = 0;
+      let askCount = 0;
+
+      // Calculate gamma for bid levels
+      if (bids && bids.length > 0) {
+        bids.forEach((bid: any) => {
+          const price = bid[0]; // Price level
+          const quantity = bid[1]; // Quantity at this price level
+          // Use API gamma if available, otherwise calculate
+          const gamma = gammaFromAPI;
+          totalBidGamma += gamma * quantity;
+          bidCount++;
+        });
+      }
+
+      // Calculate gamma for ask levels
+      if (asks && asks.length > 0) {
+        asks.forEach((ask: any) => {
+          const price = ask[0]; // Price level
+          const quantity = ask[1]; // Quantity at this price level
+          // Use API gamma if available, otherwise calculate
+          const gamma = gammaFromAPI;
+          totalAskGamma += gamma * quantity;
+          askCount++;
+        });
+      }
+
+      const result = {
+        instrument_name: orderBook.instrument_name,
+        gamma_from_api: gammaFromAPI,
+        total_bid_gamma: totalBidGamma,
+        total_ask_gamma: totalAskGamma,
+        net_gamma: totalAskGamma - totalBidGamma,
+        bid_levels: bidCount,
+        ask_levels: askCount,
+        gamma_exposure_usd: Math.abs(totalAskGamma - totalBidGamma)
+      };
+
+      console.log('Calculation result:', result);
+
+      return result;
+    } catch (error) {
+      console.error('Error calculating order book gamma:', error);
+      throw new Error(`Failed to calculate order book gamma: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   async getGammaData(currency: string = 'BTC'): Promise<GammaResponse> {
@@ -182,104 +245,118 @@ export class GammaService {
       let processedCount = 0;
       let skippedCount = 0;
 
-      instruments.forEach((instrument: any) => {
-        try {
-          const { instrument_name, strike, expiration_timestamp, option_type } =
-            instrument;
-          const marketData = marketDataMap[instrument_name];
+      // Process instruments in batches to avoid too many concurrent requests
+      const batchSize = 50;
+      for (let i = 0; i < instruments.length; i += batchSize) {
+        const batch = instruments.slice(i, i + batchSize);
+        console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(instruments.length / batchSize)}...`);
 
-          if (!marketData) {
-            skippedCount++;
-            return;
-          }
+        const batchPromises = batch.map(async (instrument: any) => {
+          try {
+            const { instrument_name, strike, expiration_timestamp, option_type, instrument_id } =
+              instrument;
+            const marketData = marketDataMap[instrument_name];
 
-          // Получаем данные из API и рассчитываем net GEX напрямую
-          const openInterest = (marketData.open_interest || 0) as number;
-          const markIv = (marketData.mark_iv || 0) as number / 100; // конвертируем из процентов в десятичное число
-          const timeToExpiry = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365); // в годах
-
-          // Рассчитываем net GEX напрямую по формуле:
-          // Net GEX = OI × 0.01 × S² × √(T) × N'(d1) / (σ × S × T)
-          // где N'(d1) = (1/√(2π)) × e^(-d1²/2)
-          // d1 = (ln(S/K) + (r + σ²/2) × T) / (σ × √T)
-
-          let netGEX = 0;
-          if (openInterest > 0 && markIv > 0 && timeToExpiry > 0) {
-            const S = indexPrice;
-            const K = strike as number;
-            const r = 0; // безрисковая ставка
-            const sigma = markIv;
-
-            const sqrtT = Math.sqrt(timeToExpiry);
-            const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * timeToExpiry) / (sigma * sqrtT);
-            const nPrimeD1 = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1);
-
-            // Net GEX для одного контракта
-            const contractSize = 1; // 1 BTC или 1 ETH на контракт
-            const onePercentMove = 0.01 * S;
-            netGEX = openInterest * nPrimeD1 * onePercentMove * S * contractSize;
-
-            // Учитываем тип опциона (call/put) для знака
-            if (option_type === 'put') {
-              netGEX = -netGEX; // put опционы имеют отрицательный net GEX
+            if (!marketData) {
+              skippedCount++;
+              return;
             }
+
+            // Get order book data to extract gamma from greeks
+            let gammaFromAPI = 0;
+            if (instrument_id) {
+              try {
+                const orderBookUrl = `${CONFIG.BASE_URL}/get_order_book?instrument_name=${instrument_name}`;
+                const orderBookData = await this.fetchWithRetry<any>(orderBookUrl);
+                gammaFromAPI = orderBookData.greeks?.gamma;
+              } catch (error) {
+                console.warn(`Failed to get order book for ${instrument_name}: ${error instanceof Error ? error.message : String(error)}`);
+                gammaFromAPI = 0;
+              }
+            }
+
+            // Получаем данные из API и рассчитываем net GEX напрямую
+            const openInterest = (marketData.open_interest || 0) as number;
+            const markIv = (marketData.mark_iv || 0) as number / 100; // конвертируем из процентов в десятичное число
+            const timeToExpiry = (expiration_timestamp - now) / (1000 * 60 * 60 * 24 * 365); // в годах
+
+            let netGEX = 0;
+            if (openInterest > 0 && markIv > 0 && timeToExpiry > 0) {
+              // Используем гамму из order book API
+              const gammaFromOrderBook = gammaFromAPI;
+
+              // GEX per contract: GEX = Gamma × OpenInterest × 100
+              const gex = openInterest * gammaFromOrderBook * 100;
+
+              // GEX USD = GEX × Price
+              const gexUSD = gex * indexPrice;
+
+              // Учитываем тип опциона (call/put) для знака
+              if (option_type === 'put') {
+                netGEX = -gex; // put опционы имеют отрицательный net GEX
+              } else {
+                netGEX = gex; // call опционы имеют положительный net GEX
+              }
+
+              // Используем GEX и GEX USD напрямую
+              const gammaExposure = Math.abs(gex);
+              const gammaExposureUSD = Math.abs(gexUSD);
+
+              processedCount++;
+
+              const expirationDate = new Date(expiration_timestamp)
+                .toISOString()
+                .split('T')[0];
+
+              if (!gammaByExpiration[expirationDate]) {
+                gammaByExpiration[expirationDate] = {
+                  total_gamma: 0,
+                  total_gamma_usd: 0,
+                  call_gamma: 0,
+                  call_gamma_usd: 0,
+                  put_gamma: 0,
+                  put_gamma_usd: 0,
+                  instruments: []
+                };
+              }
+
+              gammaByExpiration[expirationDate].total_gamma += gammaExposure;
+              gammaByExpiration[expirationDate].total_gamma_usd +=
+                gammaExposureUSD;
+
+              if (option_type === 'call') {
+                gammaByExpiration[expirationDate].call_gamma += gammaExposure;
+                gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
+              } else if (option_type === 'put') {
+                gammaByExpiration[expirationDate].put_gamma += gammaExposure;
+                gammaByExpiration[expirationDate].put_gamma_usd += gammaExposureUSD;
+              }
+
+              gammaByExpiration[expirationDate].instruments.push({
+                instrument_name,
+                strike,
+                option_type,
+                gamma: gammaFromOrderBook,
+                open_interest: openInterest,
+                gamma_exposure: gammaExposure,
+                gamma_exposure_usd: gammaExposureUSD,
+                mark_iv: markIv,
+                mark_price: marketData.mark_price || 0,
+                volume_24h: marketData.volume || marketData.volume_24h || marketData.stats?.volume || marketData.stats?.volume_24h || 0,
+                bid_volume: marketData.bid_volume || marketData.stats?.volume_bid || marketData.stats?.bid_volume || 0,
+                ask_volume: marketData.ask_volume || marketData.stats?.volume_ask || marketData.stats?.ask_volume || 0
+              });
+            }
+          } catch (error) {
+            console.warn(
+              `Failed to process instrument: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            skippedCount++;
           }
+        });
 
-          // Убираем расчет гаммы и используем net GEX напрямую
-          const gammaExposure = Math.abs(netGEX);
-          const gammaExposureUSD = Math.abs(netGEX);
-
-          processedCount++;
-
-          const expirationDate = new Date(expiration_timestamp)
-            .toISOString()
-            .split('T')[0];
-
-          if (!gammaByExpiration[expirationDate]) {
-            gammaByExpiration[expirationDate] = {
-              total_gamma: 0,
-              total_gamma_usd: 0,
-              call_gamma: 0,
-              call_gamma_usd: 0,
-              put_gamma: 0,
-              put_gamma_usd: 0,
-              instruments: []
-            };
-          }
-
-          gammaByExpiration[expirationDate].total_gamma += gammaExposure;
-          gammaByExpiration[expirationDate].total_gamma_usd +=
-            gammaExposureUSD;
-
-          if (option_type === 'call') {
-            gammaByExpiration[expirationDate].call_gamma += gammaExposure;
-            gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
-          } else if (option_type === 'put') {
-            gammaByExpiration[expirationDate].put_gamma += gammaExposure;
-            gammaByExpiration[expirationDate].put_gamma_usd += gammaExposureUSD;
-          }
-
-          gammaByExpiration[expirationDate].instruments.push({
-            instrument_name,
-            strike,
-            option_type,
-            gamma: 0, //不再使用单独的gamma计算
-            open_interest: openInterest,
-            gamma_exposure: gammaExposure,
-            gamma_exposure_usd: gammaExposureUSD,
-            mark_iv: markIv,
-            mark_price: marketData.mark_price || 0,
-            volume_24h: marketData.volume || marketData.volume_24h || marketData.stats?.volume || marketData.stats?.volume_24h || 0,
-            bid_volume: marketData.bid_volume || marketData.stats?.volume_bid || marketData.stats?.bid_volume || 0,
-            ask_volume: marketData.ask_volume || marketData.stats?.volume_ask || marketData.stats?.ask_volume || 0
-          });
-        } catch (error) {
-          console.warn(
-            `Failed to process instrument: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          skippedCount++;
-        }
-      });
+        await Promise.all(batchPromises);
+      }
 
       console.log(`✓ Processed: ${processedCount}, Skipped: ${skippedCount}`);
 

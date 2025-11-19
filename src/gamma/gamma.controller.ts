@@ -45,6 +45,35 @@ export class GammaController {
     }
   }
 
+  @Get('order-book-gamma')
+  async getOrderBookGamma(
+    @Query('instrument_name') instrumentName: string
+  ) {
+    try {
+      if (!instrumentName) {
+        throw new Error('instrument_name parameter is required');
+      }
+
+      this.logger.log(`📨 API request: GET /api/order-book-gamma?instrument_name=${instrumentName}`);
+
+      const data = await this.gammaService.getOrderBookGamma(instrumentName);
+      this.logger.log(`✓ Successfully returned order book gamma for ${instrumentName}`);
+      return data;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`❌ Error in getOrderBookGamma: ${message}`, error);
+      throw new HttpException(
+        {
+          error: message,
+          status: 'error',
+          timestamp: new Date().toISOString()
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   @Get('health')
   getHealth() {
     return {
