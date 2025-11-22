@@ -31,4 +31,7 @@ export interface MarketData {
 export interface GammaResponse {
   gammaByExpiration: GammaData;
   indexPrice: number;
+  gexFlipLevel: number | null;  // Strike where Net GEX crosses zero
+  maxGexStrike: number | null;  // Strike with maximum |Net GEX|
+  maxGexValue: number;           // Value of maximum Net GEX
 }

@@ -292,15 +292,20 @@ export class GammaService {
               const gexUSD = gex * indexPrice;
 
               // Учитываем тип опциона (call/put) для знака
+              // Call = положительный вклад в Net GEX
+              // Put = отрицательный вклад в Net GEX
               if (option_type === 'put') {
                 netGEX = -gex; // put опционы имеют отрицательный net GEX
               } else {
                 netGEX = gex; // call опционы имеют положительный net GEX
               }
 
-              // Используем GEX и GEX USD напрямую
+              // Для отдельных Call/Put метрик используем абсолютные значения
               const gammaExposure = Math.abs(gex);
               const gammaExposureUSD = Math.abs(gexUSD);
+
+              // Для Net GEX используем значения СО ЗНАКОМ
+              const netGexUSD = netGEX * indexPrice;
 
               processedCount++;
 
@@ -320,10 +325,11 @@ export class GammaService {
                 };
               }
 
-              gammaByExpiration[expirationDate].total_gamma += gammaExposure;
-              gammaByExpiration[expirationDate].total_gamma_usd +=
-                gammaExposureUSD;
+              // КРИТИЧНО: total_gamma теперь Net GEX (с учётом знака)
+              gammaByExpiration[expirationDate].total_gamma += netGEX;
+              gammaByExpiration[expirationDate].total_gamma_usd += netGexUSD;
 
+              // Call и Put по-отдельности храним как абсолютные значения
               if (option_type === 'call') {
                 gammaByExpiration[expirationDate].call_gamma += gammaExposure;
                 gammaByExpiration[expirationDate].call_gamma_usd += gammaExposureUSD;
@@ -359,6 +365,74 @@ export class GammaService {
       }
 
       console.log(`✓ Processed: ${processedCount}, Skipped: ${skippedCount}`);
+
+      // Calculate GEX Flip Level and Max GEX Strike
+      console.log(`🎯 Calculating GEX Flip Level...`);
+
+      const netGexByStrike: { [strike: number]: number } = {};
+
+      // Aggregate Net GEX across all expirations by strike
+      Object.values(gammaByExpiration).forEach((expData: any) => {
+        expData.instruments.forEach((inst: any) => {
+          if (!netGexByStrike[inst.strike]) {
+            netGexByStrike[inst.strike] = 0;
+          }
+
+          // Net GEX: Call = +, Put = -
+          const netGex = inst.option_type === 'call'
+            ? inst.gamma_exposure_usd
+            : -inst.gamma_exposure_usd;
+
+          netGexByStrike[inst.strike] += netGex;
+        });
+      });
+
+      // Find flip level and max GEX
+      let gexFlipLevel: number | null = null;
+      let maxGexStrike: number | null = null;
+      let maxGexValue = 0;
+
+      const strikes = Object.keys(netGexByStrike)
+        .map(Number)
+        .sort((a, b) => a - b);
+
+      console.log(`📊 Analyzing ${strikes.length} unique strikes...`);
+
+      for (let i = 0; i < strikes.length; i++) {
+        const strike = strikes[i];
+        const gex = netGexByStrike[strike];
+
+        // Track strike with maximum |Net GEX|
+        if (Math.abs(gex) > Math.abs(maxGexValue)) {
+          maxGexValue = gex;
+          maxGexStrike = strike;
+        }
+
+        // Find GEX Flip Level (where GEX crosses zero)
+        if (i < strikes.length - 1 && gexFlipLevel === null) {
+          const currentGex = gex;
+          const nextStrike = strikes[i + 1];
+          const nextGex = netGexByStrike[nextStrike];
+
+          // Check for sign change (crossing zero)
+          if ((currentGex > 0 && nextGex < 0) || (currentGex < 0 && nextGex > 0)) {
+            // Linear interpolation for precise flip level
+            const ratio = Math.abs(currentGex) / (Math.abs(currentGex) + Math.abs(nextGex));
+            gexFlipLevel = strike + (nextStrike - strike) * ratio;
+
+            console.log(`✓ GEX Flip Level found: $${gexFlipLevel.toFixed(2)}`);
+            console.log(`  Between strikes: $${strike} (GEX: ${currentGex.toFixed(0)}) and $${nextStrike} (GEX: ${nextGex.toFixed(0)})`);
+          }
+        }
+      }
+
+      if (maxGexStrike) {
+        console.log(`✓ Max GEX Strike: $${maxGexStrike} (Net GEX: ${(maxGexValue / 1e6).toFixed(2)}M)`);
+      }
+
+      if (!gexFlipLevel) {
+        console.log(`⚠️ No GEX Flip Level found (no sign change detected)`);
+      }
 
       const sortedExpirations = Object.keys(gammaByExpiration).sort();
       console.log(`✓ Got ${sortedExpirations.length} expiration dates`);
@@ -403,7 +477,10 @@ export class GammaService {
 
       return {
         gammaByExpiration: gammaByExpiration as unknown as GammaData,
-        indexPrice
+        indexPrice,
+        gexFlipLevel,
+        maxGexStrike,
+        maxGexValue
       };
     } catch (error) {
       const errorMsg =
